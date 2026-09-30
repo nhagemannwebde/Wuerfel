@@ -13,3 +13,5 @@ android.minapi = 21
 android.ndk = 25.2.9519653
 android.archs = armeabi-v7a,arm64-v8a
 p4a.branch = stable
+[buildozer]
+log_level = 2
