@@ -1,1 +1,92 @@
- 
+name: Build Android APK (robust)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-cache-${{ runner.os }}-${{ hashFiles('**/buildozer.spec','**/requirements.txt','**/main.py') }}
+          restore-keys: |
+            pip-cache-${{ runner.os }}-
+
+      - name: Cache buildozer and p4a
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.local/share/python-for-android
+            ~/.cache/pip
+          key: buildozer-cache-${{ runner.os }}-${{ hashFiles('**/buildozer.spec','**/main.py') }}
+          restore-keys: |
+            buildozer-cache-${{ runner.os }}-
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git python3 python3-pip zip unzip \
+            libgl1 libffi-dev libssl-dev pkg-config \
+            autoconf automake libtool cmake ninja-build ccache
+
+      - name: Install Python tooling
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install --upgrade Cython==0.29.36 buildozer==1.4.7
+
+      - name: Install Android commandline tools & SDK/NDK (cached)
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: |
+          set -eux
+          mkdir -p "$ANDROID_SDK_ROOT"
+          cd /tmp
+          TOOL_ZIP=commandlinetools-linux-9477386_latest.zip
+          curl -fLo $TOOL_ZIP https://dl.google.com/android/repository/${TOOL_ZIP}
+          unzip -q $TOOL_ZIP -d "$ANDROID_SDK_ROOT/cmdline-tools-temp"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$ANDROID_SDK_ROOT/cmdline-tools/latest/" || true
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-31" \
+            "build-tools;31.0.0" \
+            "ndk;25.2.9519653"
+
+      - name: Build APK with Buildozer (debug)
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/25.2.9519653
+          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:$PATH
+        run: |
+          set -eux
+          buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wuerfelspiel-apk
+          path: bin/*.apk
