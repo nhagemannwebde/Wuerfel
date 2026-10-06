@@ -23,6 +23,7 @@ COLOR_YELLOW = (0.92, 0.7, 0.03, 1)   # #eab308
 COLOR_RED = (0.94, 0.27, 0.27, 1)      # #ef4444
 COLOR_DISABLED = (0.39, 0.45, 0.55, 1) # #64748b
 COLOR_KEPT = (0.28, 0.33, 0.41, 1)     # #475569
+COLOR_EXIT = (1,0,0,1)
 
 # Relative Koordinaten für die Punkte (Würfelaugen)
 DOT_POSITIONS = {
@@ -174,7 +175,6 @@ def bot_select_dice(active_values):
             pts, valid, _ = evaluate_selection(sub_vals)
             if valid and pts > 0:
                 count = len(sub_vals)
-                # Mehr Punkte sind besser; bei gleichen Punkten sind weniger benötigte Würfel besser
                 if pts > best_pts:
                     best_pts = pts
                     best_count = count
@@ -207,10 +207,9 @@ class DiceGameApp(App):
         # Haupt-Layout
         root = BoxLayout(orientation='vertical', padding=15, spacing=10)
 
-        # 1. Modus-Auswahl (8% der Fensterhöhe)
+        # 1. Modus-Auswahl
         mode_layout = BoxLayout(size_hint_y=0.08, spacing=5)
-        mode_layout.add_widget(Label(text="M:", size_hint_x=0.25, bold=True, color=(0.6, 0.6, 0.7, 1)))
-
+        
         self.btn_m1 = Button(text="1 Spieler", background_color=COLOR_HEADER, background_normal='')
         self.btn_m1.bind(on_press=lambda x: self._set_mode("1p"))
         mode_layout.add_widget(self.btn_m1)
@@ -222,10 +221,14 @@ class DiceGameApp(App):
         self.btn_bot = Button(text="vs. KI", background_color=COLOR_BLUE, background_normal='')
         self.btn_bot.bind(on_press=lambda x: self._set_mode("bot"))
         mode_layout.add_widget(self.btn_bot)
+        
+        self.btn_m0 = Button(text="X", background_color=COLOR_EXIT, background_normal='')
+        self.btn_m0.bind(on_press=exit)
+        mode_layout.add_widget(self.btn_m0)
 
         root.add_widget(mode_layout)
 
-        # 2. Header / Punktestand (14% der Fensterhöhe)
+        # 2. Header / Punktestand
         header = BoxLayout(orientation='vertical', size_hint_y=0.14, padding=5)
         self.lbl_scores = Label(text="Spieler 1: 0  |  Computer: 0", bold=True, font_size='16sp')
         self.lbl_turn_score = Label(text="Am Zug: Spieler 1  (Zug-Punkte: 0)", color=(0.2, 0.7, 1, 1), font_size='15sp')
@@ -233,11 +236,11 @@ class DiceGameApp(App):
         header.add_widget(self.lbl_turn_score)
         root.add_widget(header)
 
-        # 3. Statuszeile (8% der Fensterhöhe)
+        # 3. Statuszeile
         self.lbl_status = Label(text="Neues Spiel gestartet!", size_hint_y=0.08, font_size='13sp', halign='center')
         root.add_widget(self.lbl_status)
 
-        # 4. Würfelgitter (35% der Fensterhöhe)
+        # 4. Würfelgitter
         dice_grid = GridLayout(cols=3, spacing=10, size_hint_y=0.3)
         self.dice_buttons = []
 
@@ -249,11 +252,11 @@ class DiceGameApp(App):
 
         root.add_widget(dice_grid)
 
-        # 5. Regelliste (10% der Fensterhöhe)
+        # 5. Regelliste
         rules_text = f"Ziel: {TARGET_SCORE} Pkt | 1=100, 5=50, 3er=100xAugenzahl\nFull House=500 | Straße=4000 | Alle 6 abgeräumt = Bestätigungswurf!"
         root.add_widget(Label(text=rules_text, size_hint_y=0.10, font_size='11sp', color=(0.6, 0.6, 0.7, 1), halign='center'))
 
-        # 6. Aktions-Buttons (12% der Fensterhöhe)
+        # 6. Aktions-Buttons
         btn_layout = BoxLayout(size_hint_y=0.12, spacing=15)
         self.btn_roll = Button(text="Würfeln", bold=True, background_color=COLOR_BLUE, background_normal='')
         self.btn_roll.bind(on_press=lambda x: self._on_roll_btn_click())
@@ -266,12 +269,13 @@ class DiceGameApp(App):
         root.add_widget(btn_layout)
 
         self._reset_game()
+        Clock.schedule_once(lambda dt: self._show_popup("Würfel 10000","Herzlich Willkommen\nbei Würfel 10000\nund viel Spaß\nbeim Spielen","und los"), 0.1)
         return root
 
-    def _show_popup(self, title, message):
+    def _show_popup(self, title, message, button_txt):
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
         content.add_widget(Label(text=message, halign='center'))
-        btn = Button(text="OK", size_hint_y=None, height=40)
+        btn = Button(text=button_txt, size_hint_y=None, height=80)
         content.add_widget(btn)
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         btn.bind(on_press=popup.dismiss)
@@ -358,7 +362,7 @@ class DiceGameApp(App):
 
             pts, is_valid, desc = evaluate_selection(selected_values)
             if not is_valid:
-                self._show_popup("Auswahl ungültig", desc)
+                self._show_popup("Auswahl ungültig", desc,"OK")
                 return
 
             self.turn_score += pts
@@ -394,20 +398,23 @@ class DiceGameApp(App):
         active_indices = [i for i in range(6) if self.dice_states[i] == "active"]
         active_values = [self.dice_values[i] for i in active_indices]
 
+        # Große Straße Behandlung
         if len(active_values) == 6 and set(active_values) == {1, 2, 3, 4, 5, 6}:
             self.turn_score += 4000
             curr_player = self.players[self.current_player_idx]
             self.lbl_turn_score.text = f"Am Zug: {curr_player}  (Zug-Punkte: {self.turn_score})"
 
             if not (self.mode == "bot" and curr_player == "Computer (KI)"):
-                self._show_popup("GROSSE STRASSE!", "+4.000 Punkte!\nBestätigungswurf erforderlich!")
+                self._show_popup("GROSSE STRASSE!", "+4.000 Punkte!\nBestätigungswurf erforderlich!","OK")
 
             self.dice_states = ["active"] * 6
             self.has_rolled_in_step = False
             self._update_dice_styles()
 
+            # KORREKTUR: Die KI MUSS ebenfalls einen Bestätigungswurf machen!
             if self.mode == "bot" and curr_player == "Computer (KI)":
-                Clock.schedule_once(lambda dt: self._bot_decision_step(), 1.2)
+                self.lbl_status.text = f"{curr_player} hat eine Straße (+4000 Pkt)! Bestätigungswurf..."
+                Clock.schedule_once(lambda dt: self._roll_dice(), 1.2)
             else:
                 self.btn_roll.disabled = False
             return
@@ -483,12 +490,12 @@ class DiceGameApp(App):
         if selected_indices:
             pts, is_valid, desc = evaluate_selection(selected_values)
             if not is_valid:
-                self._show_popup("Hinweis", desc)
+                self._show_popup("Hinweis", desc,"OK")
                 return
 
         final_turn_score = self.turn_score + pts
         if final_turn_score < 300:
-            self._show_popup("Hinweis", "Mindestens 300 Punkte benötigt!")
+            self._show_popup("Hinweis", "Mindestens 300 Punkte benötigt!","OK")
             return
 
         self.scores[self.current_player_idx] += final_turn_score
@@ -497,7 +504,7 @@ class DiceGameApp(App):
         curr_player = self.players[self.current_player_idx]
 
         if self.scores[self.current_player_idx] >= TARGET_SCORE:
-            self._show_popup("GEWONNEN!", f"{curr_player} gewinnt mit {self.scores[self.current_player_idx]} Punkten!")
+            self._show_popup("GEWONNEN!", f"{curr_player} gewinnt mit {self.scores[self.current_player_idx]} Punkten!","OK")
             self._reset_game()
             return
 
@@ -519,7 +526,6 @@ class DiceGameApp(App):
 
         self._update_dice_styles()
 
-        # KI-Punkte & Status auf der Benutzeroberfläche direkt anzeigen
         selected_indices = [i for i in range(6) if self.dice_states[i] == "selected"]
         selected_values = [self.dice_values[i] for i in selected_indices]
         pts, _, desc = evaluate_selection(selected_values)
